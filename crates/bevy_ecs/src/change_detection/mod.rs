@@ -1,10 +1,12 @@
 //! Types that detect when their internal data mutate.
 
+mod events;
 mod maybe_location;
 mod params;
 mod tick;
 mod traits;
 
+pub use events::*;
 pub use maybe_location::MaybeLocation;
 pub use params::*;
 pub use tick::*;

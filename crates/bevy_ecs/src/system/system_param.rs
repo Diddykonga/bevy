@@ -39,6 +39,7 @@ use core::{
     ops::{Deref, DerefMut},
 };
 use smallvec::SmallVec;
+use std::println;
 use thiserror::Error;
 
 use super::Populated;
@@ -302,7 +303,7 @@ pub type SystemParamItem<'w, 's, P> = <P as SystemParam>::Item<'w, 's>;
 impl DeferredWorld<'_> {
     /// Triggers both Hooks and Observers for a given [`Entity`] and set of [`ComponentId`]s, depending on whether `has_hooks` or `has_observers` is true.
     #[inline(always)]
-    fn trigger_mutate<const APPLY: bool>(
+    pub(crate) fn trigger_mutate<const APPLY: bool>(
         &mut self,
         entity: Entity,
         comps: Vec<ComponentId>,
@@ -469,6 +470,7 @@ impl<D: QueryData + 'static, F: QueryFilter + 'static> Query<'_, '_, D, F> {
                                                     tables.get(a.table_id()).is_some_and(|t| {
                                                         t.get_changed_tick(*c, table_row)
                                                             .is_some_and(|tick| {
+                                                                // println!("Query Scan: Tick - {0:?}, Last Run - {1:?}", unsafe { *(tick.get()) }, last_run);
                                                                 // SAFETY: DeferredWorld-Access
                                                                 unsafe { *(tick.get()) == last_run }
                                                             })

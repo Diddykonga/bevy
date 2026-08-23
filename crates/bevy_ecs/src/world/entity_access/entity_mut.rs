@@ -1,6 +1,6 @@
 use crate::{
     archetype::Archetype,
-    change_detection::{ComponentTicks, MaybeLocation, Tick},
+    change_detection::{ComponentTicks, EntityDeferredWorldMut, MaybeLocation, MutCommands, Tick},
     component::{Component, ComponentId, Mutable},
     entity::{ContainsEntity, Entity, EntityEquivalent, EntityLocation},
     query::{
@@ -400,6 +400,20 @@ impl<'w> EntityMut<'w> {
     pub fn into_mut<T: Component<Mutability = Mutable>>(self) -> Option<Mut<'w, T>> {
         // SAFETY: consuming `self` implies exclusive access
         unsafe { self.cell.get_mut() }
+    }
+
+    pub fn into_mut_c<T: Component<Mutability = Mutable>>(self) -> Option<MutCommands<'w, T>> {
+        // SAFETY: consuming `self` implies exclusive access|
+        unsafe {
+            let value = self.cell.get_mut::<T>()?;
+            Some(MutCommands {
+                value,
+                deferred: EntityDeferredWorldMut {
+                    entity: self.cell.entity(),
+                    world: self.cell.world().into_deferred(),
+                },
+            })
+        }
     }
 
     /// Gets mutable access to the component of type `T` for the current entity.

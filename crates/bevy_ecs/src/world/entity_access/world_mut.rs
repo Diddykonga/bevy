@@ -3,7 +3,9 @@ use crate::{
     bundle::{
         Bundle, BundleFromComponents, BundleInserter, BundleRemover, DynamicBundle, InsertMode,
     },
-    change_detection::{ComponentTicks, MaybeLocation, MutUntyped, Tick},
+    change_detection::{
+        ComponentTicks, EntityDeferredWorldMut, MaybeLocation, MutCommands, MutUntyped, Tick,
+    },
     component::{Component, ComponentId, Components, Mutable, StorageType},
     entity::{Entity, EntityCloner, EntityClonerBuilder, EntityLocation, OptIn, OptOut},
     event::{EntityComponentsTrigger, EntityEvent},
@@ -633,6 +635,73 @@ impl<'w> EntityWorldMut<'w> {
     pub fn into_mut<T: Component<Mutability = Mutable>>(self) -> Option<Mut<'w, T>> {
         // SAFETY: consuming `self` implies exclusive access
         unsafe { self.into_unsafe_entity_cell().get_mut() }
+    }
+
+    /// ```
+    /// use bevy_ecs::prelude::*;
+    /// use bevy_ecs::world::{DeferredWorld};
+    /// use bevy_ecs::lifecycle::{HookContext};
+    ///
+    /// #[derive(Component, Debug)]
+    /// #[component(on_mutate)]
+    /// pub struct Comp(pub u32);
+    ///
+    /// #[derive(Component, Debug)]
+    /// pub struct CompB(pub u32);
+    ///
+    /// impl Comp {
+    ///     fn on_mutate(mut world: DeferredWorld<'_>, hook: HookContext) {
+    ///         let c = world.entity(hook.entity).get::<Comp>().unwrap();
+    ///         println!("Hook: {c:?}");
+    ///     }
+    /// }
+    ///
+    /// fn observer(on: On<Mutate<Comp>>, query: Query<&Comp>, mut comp: Query<&mut CompB>) {
+    ///     let c = query.get(on.entity).unwrap();
+    ///     comp.get_mut(on.entity).unwrap().0 = c.0 * 10;
+    ///     println!("Observer: {c:?}");
+    /// }
+    ///
+    /// fn observerB(on: On<Mutate<CompB>>, query: Query<&CompB>) {
+    ///     let c = query.get(on.entity).unwrap();
+    ///     println!("ObserverB: {c:?}");
+    /// }
+    ///
+    /// let mut world = World::default();
+    /// world.add_observer(observer);
+    /// world.add_observer(observerB);
+    /// {
+    ///     let e = world.spawn_batch(vec![(Comp(0), CompB(0)), (Comp(0), CompB(0))]).collect::<Vec<_>>();
+    ///     world.increment_change_tick();
+    ///     let mut e = world.entity_mut(&*e);
+    ///     let mut e1 = e.pop().unwrap();
+    ///     let mut e2 = e.pop().unwrap();
+    ///     let mut c1 = e1.into_mut_c::<Comp>().unwrap();
+    ///     let mut c2 = e2.into_mut_c::<Comp>().unwrap();
+    ///     c1.0 = 100;
+    ///     c2.0 = 250;
+    /// }
+    /// world.flush();
+    /// assert!(false);
+    /// ```
+    pub fn into_mut_c<T: Component<Mutability = Mutable>>(self) -> Option<MutCommands<'w, T>> {
+        let entity = self.entity;
+        let world = self.world.as_unsafe_world_cell();
+
+        let value = if let Ok(e) = world.get_entity(entity) {
+            // SAFETY: Took self by value
+            unsafe { e.get_mut::<T>()? }
+        } else {
+            return None;
+        };
+        Some(MutCommands {
+            value,
+            deferred: EntityDeferredWorldMut {
+                entity,
+                // SAFTEY: Took self by value
+                world: unsafe { world.into_deferred() },
+            },
+        })
     }
 
     /// Consumes `self` and gets mutable access to the component of type `T`
